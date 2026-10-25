@@ -65,6 +65,8 @@ npx -y github:marianelavflora/unc-mcp login
 
 La primera vez **tarda uno o dos minutos** porque baja y prepara todo. Es normal: no cierres la ventana.
 
+> ⏳ **Esto de instalar desde GitHub (`github:...`) es temporal**, mientras el soporte para la UNC no esté publicado como paquete. Cuando lo esté, el comando va a ser más corto y lo vamos a avisar en el [README](README.md). Lo que ya instalaste sigue andando igual.
+
 Después te va a aparecer esto:
 
 1. **Una lista de facultades.** Movete con las **flechitas ↑ ↓** del teclado hasta la tuya y apretá **Enter**. Las de la UNC están arriba de todo.
