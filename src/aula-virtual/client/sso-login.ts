@@ -1,5 +1,6 @@
 import { randomInt } from "node:crypto";
 import { CookieJar } from "tough-cookie";
+import { logger } from "../../shared/logger.js";
 import type { Credentials } from "./credentials.js";
 import { UnsupportedRegionalError, type Regional, type SsoProviderId } from "./regionals.js";
 import { MoodleError } from "./moodle-api.js";
@@ -46,6 +47,11 @@ const PROVIDERS: Record<SsoProviderId, SsoProvider> = {
         submit: submitMicrosoftForm,
         loginError: microsoftLoginError,
     },
+    cas: {
+        link: /href="([^"]*\/auth\/saml2\/login\.php[^"]*)"/,
+        submit: submitCasForm,
+        loginError: casLoginError,
+    },
 };
 
 /**
@@ -78,18 +84,34 @@ export async function fetchToken(regional: Regional, credentials: Credentials): 
 
     const provider = sso && PROVIDERS[sso.provider];
     const ssoHref = provider && landing.html.match(provider.link)?.[1];
-    if (sso && provider && ssoHref) {
-        landing = await follow(jar, new URL(decodeHtml(ssoHref), landing.url).toString());
-        if ("token" in landing) return landing.token;
+    // Donde el SSO está forzado (la mayoría de las facultades de la UNC), launch.php redirige derecho al
+    // SSO sin pasar por la página de login de Moodle: no hay botón que buscar, ya estamos en el formulario.
+    const alreadyAtSso = !!sso && new URL(landing.url).host === sso.host;
+    if (sso && provider && (ssoHref || alreadyAtSso)) {
+        if (ssoHref) {
+            landing = await follow(jar, new URL(decodeHtml(ssoHref), landing.url).toString());
+            if ("token" in landing) return landing.token;
+        }
 
         if (new URL(landing.url).host === sso.host) {
             landing = await provider.submit(jar, landing, credentials);
             if ("token" in landing) return landing.token;
             if (new URL(landing.url).host === sso.host) {
-                // Aspirantes del ingreso y algunas tecnicaturas no tienen cuenta en el SSO: entran con el login de Moodle.
-                const viaTokenPhp = await tryTokenPhp(baseUrl, credentials);
-                if (viaTokenPhp) return viaTokenPhp;
-                throw new InvalidCredentialsError(provider.loginError(landing.html));
+                const reason = provider.loginError(landing.html);
+                // Aspirantes del ingreso y algunas tecnicaturas no tienen cuenta en el SSO: entran con el login
+                // de Moodle. En la UNC no: las cuentas de alumno existen solo en el SSO, Moodle no les valida
+                // la contraseña ni por la web ni por la API, y cada intento le suma un login fallido a la
+                // cuenta. Si el camino de Moodle también rechaza, el motivo que sirve es el del SSO: el suyo
+                // es siempre "Acceso inválido", que para una cuenta que solo existe en el SSO no explica nada.
+                if (sso.provider !== "cas") {
+                    try {
+                        const viaTokenPhp = await tryTokenPhp(baseUrl, credentials);
+                        if (viaTokenPhp) return viaTokenPhp;
+                    } catch (e) {
+                        if (!(e instanceof InvalidCredentialsError)) throw e;
+                    }
+                }
+                throw new InvalidCredentialsError(reason);
             }
         }
     } else {
@@ -241,12 +263,15 @@ function parseAadConfig(html: string): AadConfig | null {
     return null;
 }
 
-/** El primer `<form method="post">` de la página: su `action` y sus inputs ocultos. */
+/**
+ * El primer `<form method="post">` de la página: su `action` y sus inputs ocultos. Un form sin `action`
+ * se postea a la propia página, que es lo que significa el string vacío al resolverlo contra su URL: la
+ * pantalla de la contraseña del CAS de la UNC es así (`<form method="post" id="fm1">`, sin `action`).
+ */
 function findPostForm(html: string): { action: string; inputs: Record<string, string> } | null {
     const m = html.match(/<form\b[^>]*>([\s\S]*?)<\/form>/i);
     if (!m || !/method\s*=\s*["']?post/i.test(m[0])) return null;
-    const action = m[0].match(/action\s*=\s*["']([^"']*)["']/i)?.[1];
-    if (!action) return null;
+    const action = m[0].match(/action\s*=\s*["']([^"']*)["']/i)?.[1] ?? "";
     const inputs: Record<string, string> = {};
     for (const input of m[1].matchAll(/<input\b[^>]*>/gi)) {
         const name = input[0].match(/name\s*=\s*["']([^"']*)["']/i)?.[1];
@@ -302,6 +327,73 @@ async function submitKeycloakForm(jar: CookieJar, { html }: Page, { username, pa
 
     const body = new URLSearchParams({ username, password, rememberMe: "on", credentialId: "" });
     return follow(jar, JSON.parse(action) as string, { method: "POST", body });
+}
+
+/**
+ * Pasos máximos del webflow de CAS: usuario, contraseña y el relay SAML son tres, y quedan tres de
+ * margen para pantallas intermedias (avisos, elección de IdP) antes de cortar.
+ */
+const MAX_CAS_STEPS = 6;
+
+/**
+ * Formulario del Apereo CAS que valida usuario y contraseña detrás del IdP Shibboleth de la UNC. Es
+ * identifier-first (usuario y contraseña en pantallas separadas) y el `execution` del Spring Webflow
+ * cambia en cada paso, así que el bucle decide qué mandar mirando el formulario que tiene a mano en vez
+ * de contar pasos: así no importa cuántas pantallas meta el CAS ni si pide `username` de nuevo.
+ */
+async function submitCasForm(jar: CookieJar, page: Page, { username, password }: Credentials): Promise<Landing> {
+    const ssoHost = new URL(page.url).host;
+    let landing: Landing = page;
+    let passwordSent = false;
+
+    for (let i = 0; i < MAX_CAS_STEPS; i++) {
+        if ("token" in landing) return landing;
+        // Si ya mandamos algo y el CAS muestra un error, rechazó las credenciales: lo cuenta `fetchToken`.
+        if (i > 0 && casLoginError(landing.html)) return casStep(i, landing, "el CAS muestra un error");
+
+        const form = findPostForm(landing.html);
+        // Sigue en el SSO y no hay nada más que postear: que `fetchToken` decida con `loginError`.
+        if (!form) return casStep(i, landing, "sin formulario que postear");
+        const action = new URL(form.action, landing.url).toString();
+
+        // El relay SAML: un form autoejecutable con `SAMLResponse` + `RelayState` que apunta al ACS de
+        // Moodle (`/auth/saml2/sp/saml2-acs.php/<aula>`). Se postea tal cual y el 303 del ACS termina en
+        // `moodlemobile://token=...`, que ya resuelve `follow`. Se reconoce por su `SAMLResponse` antes
+        // que por el host: así sigue andando aunque su `action` venga de una plantilla que lo escape raro.
+        if ("SAMLResponse" in form.inputs || new URL(action).host !== ssoHost) {
+            return follow(jar, action, { method: "POST", body: new URLSearchParams(form.inputs) });
+        }
+
+        // El paso de la contraseña se reconoce por tener el input `password` en el form, no por su número.
+        const isPasswordStep = "password" in form.inputs;
+        // Volver a la pantalla de contraseña después de haberla mandado es un rechazo, aunque no le
+        // reconozcamos el mensaje de error: reintentar la encadenaría hasta bloquear la cuenta, porque el
+        // CAS cuenta los intentos fallidos. Que `fetchToken` lo reporte como credenciales inválidas.
+        if (isPasswordStep && passwordSent) return casStep(i, landing, "volvió a pedir la contraseña");
+
+        logger.info(`Paso ${i + 1} del CAS: ${isPasswordStep ? "contraseña" : "usuario"}.`);
+        // `username` va en los dos pasos: es inocuo y cubre que el CAS lo pida como hidden en el segundo.
+        const body = new URLSearchParams({
+            ...form.inputs,
+            username,
+            ...(isPasswordStep ? { password } : {}),
+            _eventId: "submit",
+        });
+        passwordSent ||= isPasswordStep;
+        landing = await follow(jar, action, { method: "POST", body });
+    }
+    throw new Error("Demasiados pasos en el login del CAS de la UNC.");
+}
+
+/**
+ * Deja asentado en qué paso del CAS se cortó el login y por qué, y devuelve la página tal cual para que
+ * `fetchToken` decida el error. Loguea host y path solamente: el query de estas URLs lleva el
+ * `SAMLRequest` y el `RelayState`, que no aportan nada para diagnosticar y son ruido.
+ */
+function casStep(step: number, landing: Page, why: string): Page {
+    const { host, pathname } = new URL(landing.url);
+    logger.info(`El login del CAS se detuvo en el paso ${step + 1} (${host}${pathname}): ${why}.`);
+    return landing;
 }
 
 /** Login directo de Moodle (sin SSO): manda usuario y contraseña al formulario de /login/index.php. */
@@ -360,16 +452,66 @@ export function decodeLaunchToken(url: string): string {
     return parts[1];
 }
 
-const decodeHtml = (s: string) => s.replaceAll("&amp;", "&");
+/**
+ * Las entidades de los atributos de estas páginas. No alcanza con `&amp;`: las plantillas del IdP
+ * Shibboleth de la UNC escapan el `action` y el `RelayState` del relay SAML carácter por carácter, hasta
+ * los `:` y las `/` (`https&#x3a;&#x2f;&#x2f;...`). Sin decodificar eso, el `#` de la primera entidad
+ * arranca un fragmento y la URL resuelve a un path inexistente del propio IdP. `&amp;` va al final para
+ * no volver a decodificar lo que ya salió de otra entidad.
+ */
+const decodeHtml = (s: string) =>
+    s
+        .replace(/&#x([0-9a-f]{1,6});/gi, (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
+        .replace(/&#(\d{1,7});/g, (_, dec: string) => String.fromCodePoint(Number(dec)))
+        .replaceAll("&quot;", '"')
+        .replaceAll("&apos;", "'")
+        .replaceAll("&lt;", "<")
+        .replaceAll("&gt;", ">")
+        .replaceAll("&amp;", "&");
 
 /** Extrae el mensaje de error que muestra Moodle/Keycloak en la página de login. */
 function extractLoginError(html: string): string | undefined {
-    const patterns = [
+    return matchErrorText(html, [
         /alert-danger[^>]*>([\s\S]*?)<\/div>/i,
         /alert-error[^>]*>([\s\S]*?)<\/div>/i,
         /class="[^"]*error[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
         /<div[^>]*id="loginerrormessage"[^>]*>([\s\S]*?)<\/div>/i,
-    ];
+    ]);
+}
+
+/**
+ * El contenedor de error del CAS de la UNC, visto en su HTML real el 2026-10-25: `#server-error` en la
+ * pantalla del usuario y `#server-errors` (con items `.server-error-item`) en la de la contraseña. Los
+ * patrones genéricos no sirven acá porque el mensaje está dos divs adentro, así que cortar en el primer
+ * `</div>` deja solo un comentario sin texto.
+ */
+const CAS_ERROR_CONTAINER = /<div[^>]*id="server-errors?"[^>]*>/i;
+
+/** Cuánto HTML se mira después del contenedor: si está vacío, no se sale a buscar texto del formulario. */
+const CAS_ERROR_SPAN = 1000;
+
+/** El motivo del rechazo que muestra el CAS de la UNC; si no reconoce el contenedor, prueba el genérico. */
+function casLoginError(html: string): string | undefined {
+    const container = html.match(CAS_ERROR_CONTAINER);
+    if (container?.index !== undefined) {
+        const from = container.index + container[0].length;
+        const text = firstText(html.slice(from, from + CAS_ERROR_SPAN));
+        if (text) return text;
+    }
+    return extractLoginError(html);
+}
+
+/** El primer texto visible del fragmento: en el contenedor de error del CAS es el mensaje. */
+function firstText(html: string): string | undefined {
+    for (const chunk of html.replace(/<!--[\s\S]*?-->/g, "").split(/<[^>]+>/)) {
+        const text = chunk.replace(/\s+/g, " ").trim();
+        if (text) return text;
+    }
+    return undefined;
+}
+
+/** El primero de esos contenedores que tenga texto, ya sin etiquetas ni espacios de más. */
+function matchErrorText(html: string, patterns: RegExp[]): string | undefined {
     for (const re of patterns) {
         const m = html.match(re);
         if (m?.[1]) {
