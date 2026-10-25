@@ -1,7 +1,12 @@
-# UTN-MCP — El puente entre tu agente y los sistemas de la Universidad.
-Este es el Model Context Protocol server NO OFICIAL de la UTN. Con él podés pedirle a tu agente de preferencia (Claude, ChatGPT, etc.) que busque información y lea los apuntes del aula virtual y, con tu confirmación, que publique en los foros o entregue tareas. Corre en tu computadora o como servidor HTTP con OAuth, para usarlo desde cualquier lado.
+# UNC-MCP — El aula virtual de la UNC, conectada a tu agente.
 
-Este fork suma las facultades de la Universidad Nacional de Córdoba (UNC) al catálogo, al lado de las regionales de la UTN: los dos conviven en el mismo servidor y en las mismas tools. Es un fork de [utn-mcp](https://github.com/nialvape/utn-mcp), de Joaquín Peñalva — el proyecto original, y casi todo lo que hay en este repo, es suyo; este fork solo agrega el soporte para la UNC.
+> 🙌 **Créditos:** este proyecto es un fork de **[utn-mcp](https://github.com/nialvape/utn-mcp)**, creado por **[Joaquín Peñalva](https://github.com/nialvape)**. La idea, el diseño y casi todo el código son suyos: la navegación del aula, la lectura de archivos, los foros, las entregas y el modo HTTP. Este fork solo le suma el login de la UNC y el catálogo de sus facultades. Si te sirve, andá a dejarle una ⭐ al [repo original](https://github.com/nialvape/utn-mcp).
+
+> 🛠️ **Soporte para la UNC:** las facultades de la Universidad Nacional de Córdoba las mantenemos nosotras/os en este fork, no el proyecto original. Si algo de la UNC no anda, abrí un [issue acá](https://github.com/marianelavflora/unc-mcp/issues), no en el repo original. Si sos de la UTN, usá directamente [utn-mcp](https://github.com/nialvape/utn-mcp).
+
+**👉 ¿Querés instalarlo? Seguí la [guía paso a paso](INSTALAR.md).** No hace falta saber programar.
+
+Es un Model Context Protocol server **NO OFICIAL**. Con él podés pedirle a tu agente de preferencia (Claude, ChatGPT, etc.) que busque información y lea los apuntes del aula virtual y, con tu confirmación, que publique en los foros o entregue tareas. Corre en tu computadora o como servidor HTTP con OAuth, para usarlo desde cualquier lado. Las regionales de la UTN del proyecto original siguen estando: las dos universidades conviven en el mismo servidor y en las mismas tools.
 
 ## Qué podés pedirle
 - *"¿Cuándo es el recuperatorio del primer parcial de Álgebra?"*
@@ -44,7 +49,41 @@ Los formatos viejos de Office (.doc, .ppt, .pps), los comprimidos (.zip, .rar) y
 Cada archivo viene con un link del aula virtual que podés abrir en tu navegador. Funciona con tu sesión del aula (si no estás logueado te manda al login) y **nunca incluye tu token**: ese queda siempre en tu computadora.
 
 ## Cómo instalar
-Necesitás [Node.js](https://nodejs.org) 20 o superior. No hace falta clonar el repo ni instalar nada a mano: `npx` descarga el paquete solo.
+Necesitás [Node.js](https://nodejs.org) 20 o superior.
+
+### Si sos de la UNC: instalalo desde este fork
+**¿Primera vez con la terminal? Seguí la [guía paso a paso](INSTALAR.md).** Abajo está la versión corta.
+
+El soporte para la UNC todavía no está publicado en npm: `npx -y utn-mcp` baja el `utn-mcp` original, que no tiene las facultades de la UNC. Este fork se instala directo desde GitHub con `npx` (la primera vez tarda un minuto porque lo compila; además necesitás tener [Git](https://git-scm.com) instalado):
+```bash
+npx -y github:marianelavflora/unc-mcp login
+```
+Te muestra la lista: elegí tu facultad (`unc-*`) y entrá con tu mail `@mi.unc.edu.ar` y la contraseña de siempre. Funciona solo si tenés cuenta en el aula virtual de esa facultad.
+
+Después agregalo a tu cliente:
+
+**Claude Code**
+```bash
+claude mcp add unc -- npx -y github:marianelavflora/unc-mcp
+```
+
+**Claude Desktop**: en *Settings → Developer → Edit Config*, agregá dentro de `mcpServers` y reiniciá Claude Desktop por completo:
+```json
+"unc": {
+  "command": "npx",
+  "args": ["-y", "github:marianelavflora/unc-mcp"]
+}
+```
+En Windows, si no arranca, usá `"command": "cmd"` y `"args": ["/c", "npx", "-y", "github:marianelavflora/unc-mcp"]`.
+
+En cualquier otro cliente de los de abajo es lo mismo: donde dice `utn-mcp`, poné `github:marianelavflora/unc-mcp`.
+
+Si preferís tenerlo clonado (para desarrollar, o para elegir cuándo actualizar): `git clone https://github.com/marianelavflora/unc-mcp.git`, `npm install` adentro (compila solo) y en el cliente usás `node /ruta/completa/a/unc-mcp/build/index.js`. Para actualizarlo, `git pull` y `npm install`.
+
+Ojo: este fork guarda la sesión en el mismo lugar que el `utn-mcp` original (`%APPDATA%\utn-mcp`, `~/.config/utn-mcp` y el gestor de credenciales). Si usás los dos, el último `login` pisa al otro.
+
+### Si sos de la UTN
+No hace falta clonar el repo ni instalar nada a mano: `npx` descarga el paquete solo.
 
 ### 1. Iniciar sesión
 ```bash
@@ -228,7 +267,7 @@ npm run dev     # servidor por STDIO desde src/, con tsx
 npm run build   # compila a build/
 ```
 
-pdf.js no es una dependencia del paquete publicado. Está como `devDependency`, y `npm install` corre el script `prepare`, que copia a `vendor/pdfjs/` solo los archivos que usa el servidor (~4 MB). Así, quien instala `utn-mcp` no baja pdf.js entero ni su canvas nativo opcional (~37 MB). Si instalaste con `--ignore-scripts`, generalo a mano con `npm run prepare`.
+pdf.js no es una dependencia del paquete publicado. Está como `devDependency`, y `npm install` corre el script `prepare`, que copia a `vendor/pdfjs/` solo los archivos que usa el servidor (~4 MB). Así, quien instala `utn-mcp` no baja pdf.js entero ni su canvas nativo opcional (~37 MB). Después, `prepare` también compila a `build/`: así anda la instalación directa desde GitHub (`npx github:...`), que corre `prepare` y no tiene `build/` en el repo. Si instalaste con `--ignore-scripts`, generalo a mano con `npm run prepare`.
 
 ## Aviso
-Este proyecto no está afiliado ni avalado por la UTN. Usalo bajo tu responsabilidad.
+Este proyecto no está afiliado ni avalado por la UTN ni por la UNC. Usalo bajo tu responsabilidad.

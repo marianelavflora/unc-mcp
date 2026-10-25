@@ -14,7 +14,7 @@
     "prebuild": "node -e \"require('fs').rmSync('build',{recursive:true,force:true})\"",
     "build": "tsc",
     "prepublishOnly": "npm run build",
-    "prepare": "node scripts/vendor-pdfjs.mjs",
+    "prepare": "node scripts/vendor-pdfjs.mjs && npm run build",
     "start": "node build/index.js",
     "dev": "tsx src/index.ts",
     "test": "echo \"Error: no test specified\" && exit 1",
