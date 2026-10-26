@@ -1,9 +1,10 @@
 {
-  "name": "utn-mcp",
-  "version": "0.8.1",
-  "description": "Este es el Model Context Protocol server NO OFICIAL de la UTN para buscar informacion o archivos en el aula virtual.",
+  "name": "unc-mcp",
+  "version": "0.9.0",
+  "description": "MCP server NO OFICIAL para el aula virtual (Moodle) de la UNC y de la UTN. Fork de utn-mcp de Joaquín Peñalva.",
   "main": "build/index.js",
   "bin": {
+    "unc-mcp": "build/index.js",
     "utn-mcp": "build/index.js"
   },
   "files": [
@@ -22,21 +23,26 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nialvape/utn-mcp.git"
+    "url": "git+https://github.com/marianelavflora/unc-mcp.git"
   },
   "keywords": [
     "mcp",
     "model-context-protocol",
+    "unc",
     "utn",
+    "moodle",
     "aula-virtual"
   ],
   "author": "Joaquín Peñalva (https://github.com/nialvape)",
+  "contributors": [
+    "marianelavflora (https://github.com/marianelavflora)"
+  ],
   "license": "ISC",
   "type": "module",
   "bugs": {
-    "url": "https://github.com/nialvape/utn-mcp/issues"
+    "url": "https://github.com/marianelavflora/unc-mcp/issues"
   },
-  "homepage": "https://utnmcp.com.ar",
+  "homepage": "https://github.com/marianelavflora/unc-mcp#readme",
   "dependencies": {
     "@modelcontextprotocol/node": "^2.1.1",
     "@modelcontextprotocol/server": "^2.3.0",
