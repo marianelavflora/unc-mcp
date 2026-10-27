@@ -2,7 +2,7 @@
 
 Con esto vas a poder preguntarle a Claude cosas como *"¿qué subieron esta semana en Análisis?"* o *"resumime el apunte de la unidad 2"*, y Claude va a ir a buscarlo a tu aula virtual.
 
-No hace falta saber programar. Son 5 pasos y tardás unos 15 minutos la primera vez. Si te trabás, al final hay una sección de [problemas comunes](#si-algo-no-anda).
+No hace falta saber programar. Son 4 pasos y tardás unos 10 minutos la primera vez. Si te trabás, al final hay una sección de [problemas comunes](#si-algo-no-anda).
 
 ---
 
@@ -25,21 +25,14 @@ Node.js es el programa que hace funcionar a UNC-MCP. Se instala una sola vez.
 2. Tocá el botón grande que dice **LTS** y bajá el instalador.
 3. Abrilo y apretá **Siguiente** en todo, sin cambiar nada.
 
-## Paso 2: instalar Git
-
-Git es el programa que baja UNC-MCP desde GitHub.
-
-- **Windows**: entrá a [git-scm.com/download/win](https://git-scm.com/download/win), bajá el instalador y apretá **Next** en todo, sin cambiar nada.
-- **Mac**: no hace falta bajar nada. En el Paso 3, si la compu te dice que falta Git y te ofrece instalar las "herramientas de línea de comandos", decile que sí.
-
-## Paso 3: abrir la terminal y comprobar que está todo
+## Paso 2: abrir la terminal y comprobar que está Node
 
 La terminal es una ventana donde escribís comandos en vez de hacer clic. No se rompe nada.
 
 - **Windows**: apretá la tecla **Windows**, escribí **`cmd`** y abrí **"Símbolo del sistema"**. (Usá ese y no PowerShell: con PowerShell a veces aparece un error de permisos.)
 - **Mac**: apretá **Cmd + Espacio**, escribí **`Terminal`** y apretá Enter.
 
-> ⚠️ Si la terminal ya estaba abierta antes de instalar Node y Git, **cerrala y abrila de nuevo**.
+> ⚠️ Si la terminal ya estaba abierta antes de instalar Node, **cerrala y abrila de nuevo**.
 
 Escribí esto y apretá **Enter**:
 
@@ -47,25 +40,19 @@ Escribí esto y apretá **Enter**:
 node -v
 ```
 
-Tiene que aparecer algo como `v22.11.0`, y el primer número tiene que ser **20 o más**. Después escribí esto y apretá **Enter**:
+Tiene que aparecer algo como `v22.11.0`, y el primer número tiene que ser **20 o más**. Si aparece, seguí. Si dice *"no se reconoce como un comando"*, mirá [problemas comunes](#si-algo-no-anda).
 
-```
-git --version
-```
-
-Tiene que aparecer algo como `git version 2.47.0`. Si los dos aparecen, seguí. Si dice *"no se reconoce como un comando"*, mirá [problemas comunes](#si-algo-no-anda).
-
-## Paso 4: iniciar sesión con tu cuenta de la UNC
+## Paso 3: iniciar sesión con tu cuenta de la UNC
 
 En la misma terminal, copiá y pegá esto (en `cmd` se pega con clic derecho) y apretá **Enter**:
 
 ```
-npx -y github:marianelavflora/unc-mcp login
+npx -y unc-mcp login
 ```
 
-La primera vez **tarda uno o dos minutos** porque baja y prepara todo. Es normal: no cierres la ventana.
+Ojo: es **unc**-mcp, con C. El `utn-mcp` (con T) es el de la UTN y no tiene las facultades de la UNC.
 
-> ⏳ **Esto de instalar desde GitHub (`github:...`) es temporal**, mientras el soporte para la UNC no esté publicado como paquete. Cuando lo esté, el comando va a ser más corto y lo vamos a avisar en el [README](README.md). Lo que ya instalaste sigue andando igual.
+La primera vez **tarda un ratito** porque lo descarga. Es normal: no cierres la ventana.
 
 Después te va a aparecer esto:
 
@@ -75,7 +62,7 @@ Después te va a aparecer esto:
 
 Si al final dice **"Listo: ya podés usar el servidor MCP"**, ¡salió! 🎉 Esto se hace una sola vez.
 
-## Paso 5: conectarlo a Claude
+## Paso 4: conectarlo a Claude
 
 Elegí el caso que te toca.
 
@@ -91,7 +78,7 @@ Elegí el caso que te toca.
      "mcpServers": {
        "unc": {
          "command": "cmd",
-         "args": ["/c", "npx", "-y", "github:marianelavflora/unc-mcp"]
+         "args": ["/c", "npx", "-y", "unc-mcp"]
        }
      }
    }
@@ -103,7 +90,7 @@ Elegí el caso que te toca.
      "mcpServers": {
        "unc": {
          "command": "npx",
-         "args": ["-y", "github:marianelavflora/unc-mcp"]
+         "args": ["-y", "unc-mcp"]
        }
      }
    }
@@ -122,7 +109,7 @@ Elegí el caso que te toca.
 En la terminal, pegá esto y apretá **Enter**:
 
 ```
-claude mcp add unc -- npx -y github:marianelavflora/unc-mcp
+claude mcp add unc -- npx -y unc-mcp
 ```
 
 ---
@@ -145,23 +132,23 @@ Cuando le pidas algo que **escribe** en el aula (publicar en un foro, entregar u
 
 ## Si algo no anda
 
-**"`node` (o `git`) no se reconoce como un comando interno o externo"**
-Falta instalar ese programa, o la terminal se abrió antes de instalarlo. Cerrá la terminal, abrila de nuevo y probá otra vez. Si sigue, repetí el Paso 1 o el 2.
+**"`node` no se reconoce como un comando interno o externo"**
+Falta instalar ese programa, o la terminal se abrió antes de instalarlo. Cerrá la terminal, abrila de nuevo y probá otra vez. Si sigue, repetí el Paso 1.
 
 **"La ejecución de scripts está deshabilitada en este sistema"**
-Estás en PowerShell. Cerralo y usá **Símbolo del sistema** (`cmd`), como dice el Paso 3.
+Estás en PowerShell. Cerralo y usá **Símbolo del sistema** (`cmd`), como dice el Paso 2.
 
 **"Flujo de login inesperado" o "no tiene una cuenta en Moodle"**
 Tu usuario de la UNC está bien, pero **no tenés cuenta en el aula de la facultad que elegiste**. Cada facultad deja entrar solo a sus alumnos y docentes. Revisá haber elegido tu facultad en la lista.
 
 **"El aula rechazó usuario o contraseña"**
-Revisá que el mail sea el completo (`@mi.unc.edu.ar`) y que la contraseña sea la misma que usás en el aula. Volvé a hacer el Paso 4.
+Revisá que el mail sea el completo (`@mi.unc.edu.ar`) y que la contraseña sea la misma que usás en el aula. Volvé a hacer el Paso 3.
 
 **"Hace falta iniciar sesión"** (te lo dice Claude)
-La sesión venció. Volvé a hacer el Paso 4 y listo.
+La sesión venció. Volvé a hacer el Paso 3 y listo.
 
 **Claude no muestra nada del aula**
-- Fijate que hayas cerrado Claude Desktop **del todo** (Paso 5, punto 5) y vuelto a abrir.
+- Fijate que hayas cerrado Claude Desktop **del todo** (Paso 4, punto 5) y vuelto a abrir.
 - Revisá que el archivo de configuración haya quedado igual al del ejemplo: cualquier coma o comilla de más lo rompe.
 
 **Tengo instalado también el `utn-mcp` original (el de la UTN)**

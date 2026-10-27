@@ -51,15 +51,13 @@ Cada archivo viene con un link del aula virtual que podés abrir en tu navegador
 ## Cómo instalar
 Necesitás [Node.js](https://nodejs.org) 20 o superior.
 
-### Si sos de la UNC: instalalo desde este fork
+### Si sos de la UNC: instalá `unc-mcp`
 **¿Primera vez con la terminal? Seguí la [guía paso a paso](INSTALAR.md).** Abajo está la versión corta.
 
-El soporte para la UNC todavía no está publicado en npm: `npx -y utn-mcp` baja el `utn-mcp` original, que no tiene las facultades de la UNC. Este fork se instala directo desde GitHub con `npx` (la primera vez tarda un minuto porque lo compila; además necesitás tener [Git](https://git-scm.com) instalado).
-
-> ⏳ **Instalar desde GitHub es temporal.** Es la forma de usarlo mientras el soporte para la UNC no esté publicado como paquete. Cuando lo esté, el comando va a cambiar y lo vamos a avisar acá.
+Este fork está publicado en npm como **`unc-mcp`**. Ojo con la letra: `utn-mcp`, con T, es el original y no tiene las facultades de la UNC. `npx` lo descarga solo, así que no hace falta clonar nada ni tener Git.
 
 ```bash
-npx -y github:marianelavflora/unc-mcp login
+npx -y unc-mcp login
 ```
 Te muestra la lista: elegí tu facultad (`unc-*`) y entrá con tu mail `@mi.unc.edu.ar` y la contraseña de siempre. Funciona solo si tenés cuenta en el aula virtual de esa facultad.
 
@@ -67,19 +65,19 @@ Después agregalo a tu cliente:
 
 **Claude Code**
 ```bash
-claude mcp add unc -- npx -y github:marianelavflora/unc-mcp
+claude mcp add unc -- npx -y unc-mcp
 ```
 
 **Claude Desktop**: en *Settings → Developer → Edit Config*, agregá dentro de `mcpServers` y reiniciá Claude Desktop por completo:
 ```json
 "unc": {
   "command": "npx",
-  "args": ["-y", "github:marianelavflora/unc-mcp"]
+  "args": ["-y", "unc-mcp"]
 }
 ```
-En Windows, si no arranca, usá `"command": "cmd"` y `"args": ["/c", "npx", "-y", "github:marianelavflora/unc-mcp"]`.
+En Windows, si no arranca, usá `"command": "cmd"` y `"args": ["/c", "npx", "-y", "unc-mcp"]`.
 
-En cualquier otro cliente de los de abajo es lo mismo: donde dice `utn-mcp`, poné `github:marianelavflora/unc-mcp`.
+En cualquier otro cliente de los de abajo es lo mismo: donde dice `utn-mcp`, poné `unc-mcp`.
 
 Si preferís tenerlo clonado (para desarrollar, o para elegir cuándo actualizar): `git clone https://github.com/marianelavflora/unc-mcp.git`, `npm install` adentro (compila solo) y en el cliente usás `node /ruta/completa/a/unc-mcp/build/index.js`. Para actualizarlo, `git pull` y `npm install`.
 
@@ -270,7 +268,7 @@ npm run dev     # servidor por STDIO desde src/, con tsx
 npm run build   # compila a build/
 ```
 
-pdf.js no es una dependencia del paquete publicado. Está como `devDependency`, y `npm install` corre el script `prepare`, que copia a `vendor/pdfjs/` solo los archivos que usa el servidor (~4 MB). Así, quien instala `utn-mcp` no baja pdf.js entero ni su canvas nativo opcional (~37 MB). Después, `prepare` también compila a `build/`: así anda la instalación directa desde GitHub (`npx github:...`), que corre `prepare` y no tiene `build/` en el repo. Si instalaste con `--ignore-scripts`, generalo a mano con `npm run prepare`.
+pdf.js no es una dependencia del paquete publicado. Está como `devDependency`, y `npm install` corre el script `prepare`, que copia a `vendor/pdfjs/` solo los archivos que usa el servidor (~4 MB). Así, quien instala el paquete no baja pdf.js entero ni su canvas nativo opcional (~37 MB). Después, `prepare` también compila a `build/`: así anda la instalación directa desde GitHub (`npx github:...`), que corre `prepare` y no tiene `build/` en el repo. Si instalaste con `--ignore-scripts`, generalo a mano con `npm run prepare`.
 
 ## Aviso
 Este proyecto no está afiliado ni avalado por la UTN ni por la UNC. Usalo bajo tu responsabilidad.
