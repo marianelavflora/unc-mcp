@@ -58,13 +58,21 @@ export async function openDocument(bytes: Uint8Array, name: string): Promise<Par
     }
 
     const extension = name.toLowerCase().match(/\.(\w+)$/)?.[1] ?? "";
-    if (["txt", "csv", "md", "html", "htm"].includes(extension)) {
-        const text = new TextDecoder().decode(bytes);
-        const plain = extension.startsWith("htm") ? htmlToText(text) : text;
-        return inMemory(extension, "fragmento", splitText(plain).map((t) => ({ text: t })));
-    }
 
-    throw new UnsupportedFormat(extension ? `.${extension}` : "de este tipo");
+    // Texto con marcado propio: decodifica como UTF-8 igual, pero mostrarlo tal cual es
+    // puro ruido de sintaxis. Necesita su propio parser, no alcanza con sumarlo abajo.
+    if (extension === "rtf") throw new UnsupportedFormat(`.${extension}`);
+
+    try {
+        // Cualquier otra extensión vale si el contenido decodifica limpio como UTF-8: así se leen
+        // no solo .txt/.csv/.md, sino código fuente de cátedra (.cpp, .c, .py, .asm, .hex, .hs...)
+        // que Moodle también sirve como mimetype text/plain. Si no decodifica, es binario de verdad.
+        const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+        const plain = extension.startsWith("htm") ? htmlToText(text) : text;
+        return inMemory(extension || "txt", "fragmento", splitText(plain).map((t) => ({ text: t })));
+    } catch {
+        throw new UnsupportedFormat(extension ? `.${extension}` : "de este tipo");
+    }
 }
 
 /** Un documento que ya está entero en memoria. */
