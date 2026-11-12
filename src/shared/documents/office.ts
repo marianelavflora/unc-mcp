@@ -2,28 +2,43 @@ import { inMemory, splitText, type ParsedDocument } from "./index.js";
 import { listZip, readEntry } from "./zip.js";
 
 /**
- * docx, pptx y xlsx son zips de XML. Sacar el texto es leer unos pocos XML; no hace falta
- * una librería de Office para eso.
+ * docx, pptx, xlsx, odt, odp y ods son zips de XML. Sacar el texto es leer unos pocos XML; no
+ * hace falta una librería de Office para eso.
  */
 
-export type OfficeFormat = "docx" | "pptx" | "xlsx";
+export type OfficeFormat = "docx" | "pptx" | "xlsx" | "odt" | "odp" | "ods";
 
 /** Tope por entrada descomprimida: un XML de texto de más que esto es un zip malicioso o no es un documento. */
 const MAX_ENTRY_BYTES = 50 * 1024 * 1024;
 
-const MARKERS: Record<OfficeFormat, string> = {
+const OOXML_MARKERS: Record<"docx" | "pptx" | "xlsx", string> = {
     docx: "word/document.xml",
     pptx: "ppt/presentation.xml",
     xlsx: "xl/workbook.xml",
 };
 
+/** El "mimetype" de un ODF (LibreOffice/OpenOffice) es una entrada fija del zip, sin comprimir. */
+const ODF_MIMETYPES: Record<string, "odt" | "odp" | "ods"> = {
+    "application/vnd.oasis.opendocument.text": "odt",
+    "application/vnd.oasis.opendocument.presentation": "odp",
+    "application/vnd.oasis.opendocument.spreadsheet": "ods",
+};
+
 /** XML de las entradas del zip que hacen falta, por ruta. */
 type Xmls = Record<string, string>;
 
-/** Mira la lista de entradas del zip sin descomprimir nada. */
+/** Mira la lista de entradas del zip; para ODF hace falta además leer la entrada "mimetype". */
 export function detectOfficeFormat(bytes: Uint8Array): OfficeFormat | null {
-    const names = new Set(listZip(bytes).map((e) => e.name));
-    return (Object.keys(MARKERS) as OfficeFormat[]).find((f) => names.has(MARKERS[f])) ?? null;
+    const entries = listZip(bytes);
+    const names = new Set(entries.map((e) => e.name));
+
+    const ooxml = (Object.keys(OOXML_MARKERS) as (keyof typeof OOXML_MARKERS)[]).find((f) => names.has(OOXML_MARKERS[f]));
+    if (ooxml) return ooxml;
+
+    const mimetypeEntry = entries.find((e) => e.name === "mimetype");
+    if (!mimetypeEntry) return null;
+    const mimetype = new TextDecoder().decode(readEntry(bytes, mimetypeEntry, MAX_ENTRY_BYTES)).trim();
+    return ODF_MIMETYPES[mimetype] ?? null;
 }
 
 export function openOffice(bytes: Uint8Array, format: OfficeFormat): ParsedDocument {
@@ -60,6 +75,31 @@ export function openOffice(bytes: Uint8Array, format: OfficeFormat): ParsedDocum
                     }));
                 }),
             );
+
+        case "odt":
+            return inMemory("odt", "fragmento", splitText(odfParagraphs(read(zip, "content.xml")).join("\n")).map((text) => ({ text })));
+
+        case "odp":
+            return inMemory(
+                "odp",
+                "diapositiva",
+                [...read(zip, "content.xml").matchAll(/<draw:page\b[^>]*>([\s\S]*?)<\/draw:page>/g)].map(([, body]) => ({
+                    text: odfParagraphs(body).join("\n") || "(diapositiva sin texto)",
+                })),
+            );
+
+        case "ods":
+            return inMemory(
+                "ods",
+                "fragmento",
+                odsSheets(read(zip, "content.xml")).flatMap(({ name, text }) => {
+                    const chunks = splitText(text);
+                    return chunks.map((t, i) => ({
+                        title: chunks.length > 1 ? `hoja "${name}" (${i + 1}/${chunks.length})` : `hoja "${name}"`,
+                        text: t,
+                    }));
+                }),
+            );
     }
 }
 
@@ -72,6 +112,10 @@ function isNeeded(format: OfficeFormat, name: string): boolean {
         case "xlsx":
             return name === "xl/workbook.xml" || name === "xl/sharedStrings.xml" ||
                 name === "xl/_rels/workbook.xml.rels" || name.startsWith("xl/worksheets/");
+        case "odt":
+        case "odp":
+        case "ods":
+            return name === "content.xml";
     }
 }
 
@@ -146,5 +190,38 @@ function sheets(zip: Xmls): { name: string; text: string }[] {
                 .replace(/\t+$/, ""),
         );
         return { name, text: rows.filter(Boolean).join("\n") || "(hoja vacía)" };
+    });
+}
+
+/**
+ * Párrafos de un fragmento de ODF (odt/odp/ods): cada `<text:p>`/`<text:h>` es uno, sacando las
+ * etiquetas internas (`text:span`, `text:a`...) y con `text:tab`/`text:line-break` como su espacio.
+ */
+function odfParagraphs(xml: string): string[] {
+    return [...xml.matchAll(/<text:(?:p|h)\b[^>]*>([\s\S]*?)<\/text:(?:p|h)>/g)]
+        .map(([, inner]) =>
+            decodeEntities(
+                inner
+                    .replace(/<text:tab\b[^>]*\/>/g, "\t")
+                    .replace(/<text:line-break\s*\/>/g, "\n")
+                    .replace(/<[^>]+>/g, ""),
+            ).trim(),
+        )
+        .filter(Boolean);
+}
+
+/** Cada `<table:table>` de un ods como filas de celdas separadas por tabs, en el orden del libro. */
+function odsSheets(contentXml: string): { name: string; text: string }[] {
+    return [...contentXml.matchAll(/<table:table\b([^>]*)>([\s\S]*?)<\/table:table>/g)].map(([, attrs, body]) => {
+        const name = decodeEntities(attrs.match(/table:name="([^"]*)"/)?.[1] ?? "");
+        const rows = [...body.matchAll(/<table:table-row\b[^>]*>([\s\S]*?)<\/table:table-row>/g)]
+            .map(([, rowBody]) =>
+                [...rowBody.matchAll(/<table:table-cell\b[^>]*?(?:\/>|>([\s\S]*?)<\/table:table-cell>)/g)]
+                    .map(([, cellBody = ""]) => odfParagraphs(cellBody).join(" "))
+                    .join("\t")
+                    .replace(/\t+$/, ""),
+            )
+            .filter(Boolean);
+        return { name, text: rows.join("\n") || "(hoja vacía)" };
     });
 }
